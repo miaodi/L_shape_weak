@@ -85,11 +85,10 @@ int main() {
     int refine;
     cin >> order >> refine;
     int m_x_patch1, m_y_patch1;
-    int m_x_patch2, m_y_patch2, m_y_patch2_projection;
+    int m_x_patch2, m_y_patch2;
     int p_x = order, p_y = order;
     double *knots_x_patch1, *knots_y_patch1;
     double *knots_x_patch2, *knots_y_patch2;
-    double *knots_y_patch2_projection;
     double insertion_patch1[] = {.5};
     double insertion_patch2[] = {1.0 / 3, 2.0 / 3};
     GenerateKnot(p_x, refine, 0, 1, insertion_patch1, knots_x_patch1, m_x_patch1);
@@ -159,6 +158,7 @@ int main() {
                                                                               dof_y_patch2 - 2).partialPivLu().solve(
             N2N1_C0.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1));
     cout << C0_constrain << endl;
+
     MatrixXd M_C1 = MatrixXd::Zero(dof_y_patch2, dof_y_patch2), N2N1_patch1 = MatrixXd::Zero(dof_y_patch2,
                                                                                              dof_y_patch1), N2N2_patch1 = MatrixXd::Zero(
             dof_y_patch2, dof_y_patch1),
@@ -231,8 +231,6 @@ int main() {
             Geometry2(xi_patch2, eta_patch2, pxpxi_patch2, pxpeta_patch2, pypxi_patch2, pypeta_patch2, pxpxi_xi_patch2,
                       pxpxi_eta_patch2, pxpeta_eta_patch2, pypxi_xi_patch2, pypxi_eta_patch2, pypeta_eta_patch2,
                       x_patch2, y_patch2);
-            double Jacobian_patch1 = pxpxi_patch1 * pypeta_patch1 - pxpeta_patch1 * pypxi_patch1;
-            double Jacobian_patch2 = pxpxi_patch2 * pypeta_patch2 - pxpeta_patch2 * pypxi_patch2;
             double alpha, beta, gamma;
             alpha = pxpxi_patch2 * pypxi_patch1 - pxpxi_patch1 * pypxi_patch2;
             beta = pxpeta_patch1 * pypxi_patch2 - pxpxi_patch2 * pypeta_patch1;
@@ -259,7 +257,7 @@ int main() {
                                                                                   dof_y_patch2 -
                                                                                   3).partialPivLu().solve(
             N2N1_patch1.block(2, dof_y_patch1 - 2, dof_y_patch2 - 3, 1));
-    C1_constrain_ker.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1) = M_C0.block(2, 2, dof_y_patch2 - 2,
+    C1_constrain_ker.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1) = M_C1.block(2, 2, dof_y_patch2 - 2,
                                                                                   dof_y_patch2 -
                                                                                   2).partialPivLu().solve(
             N2N1_patch1.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1));
@@ -279,13 +277,154 @@ int main() {
                                                                                   dof_y_patch2 -
                                                                                   3).partialPivLu().solve(
             C1_constrain_img_rhs.block(2, dof_y_patch1 - 2, dof_y_patch2 - 3, 1));
-    C1_constrain_img.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1) = M_C0.block(2, 2, dof_y_patch2 - 2,
+    C1_constrain_img.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1) = M_C1.block(2, 2, dof_y_patch2 - 2,
                                                                                   dof_y_patch2 -
                                                                                   2).partialPivLu().solve(
             C1_constrain_img_rhs.block(2, dof_y_patch1 - 1, dof_y_patch2 - 2, 1));
     cout << C1_constrain_img << endl;
-/*
 
+    //Dirichlet Boundary Condition on the outer layer
+    SpMat assemble_x_basis_outerlayer(dof_x_patch1 + dof_x_patch2, dof_x_patch1 + dof_x_patch2 - 2);
+    vector<Eigen::Triplet<double> > coefficients;
+    for (int i = 0; i < dof_x_patch1; i++)
+        coefficients.push_back(Eigen::Triplet<double>(i, i, 1));
+    for (int i = 0; i < dof_x_patch2 - 2; i++) {
+        coefficients.push_back(Eigen::Triplet<double>(i + dof_x_patch1 + 2, i + dof_x_patch1, 1));
+    }
+    coefficients.push_back(Eigen::Triplet<double>(dof_x_patch1 + 1, dof_x_patch1 - 2,
+                                                  C1_constrain_ker(dof_y_patch2 - 1, dof_y_patch1 - 1)));
+    coefficients.push_back(Eigen::Triplet<double>(dof_x_patch1 + 1, dof_x_patch1 - 1,
+                                                  C1_constrain_img(dof_y_patch2 - 1, dof_y_patch1 - 1)));
+    coefficients.push_back(
+            Eigen::Triplet<double>(dof_x_patch1, dof_x_patch1 - 1, C0_constrain(dof_y_patch2 - 1, dof_y_patch1 - 1)));
+
+    assemble_x_basis_outerlayer.setFromTriplets(coefficients.begin(), coefficients.end());
+    cout<<assemble_x_basis_outerlayer<<endl;
+
+
+    MatrixXd x_basis_outerlayer = MatrixXd::Zero(dof_x_patch1 + dof_x_patch2, dof_x_patch1 + dof_x_patch2);
+    VectorXd U_rhs_outerlayer = VectorXd::Zero(dof_x_patch1 + dof_x_patch2);
+    Ref<MatrixXd> x_basis_patch1_outerlayer = x_basis_outerlayer.block(0, 0, dof_x_patch1, dof_x_patch1);
+    Ref<MatrixXd> x_basis_patch2_outerlayer = x_basis_outerlayer.block(dof_x_patch1, dof_x_patch1, dof_x_patch2,
+                                                                       dof_x_patch2);
+    Ref<VectorXd> U_rhs_patch1_outerlayer = U_rhs_outerlayer.segment(0, dof_x_patch1);
+    Ref<VectorXd> U_rhs_patch2_outerlayer = U_rhs_outerlayer.segment(dof_x_patch1, dof_x_patch2);
+    for (int ii_x = 0; ii_x < elements_x_patch1; ii_x++) {
+        double J_x = (knots_x_patch1[ii_x + p_x + 1] - knots_x_patch1[ii_x + p_x]) / 2;
+        double Middle_x = (knots_x_patch1[ii_x + p_x + 1] + knots_x_patch1[ii_x +
+                                                                           p_x]) / 2;
+        int i_x = Findspan(m_x_patch1, p_x, knots_x_patch1, Middle_x);
+        for (int jj_x = 0; jj_x < gaussian_points; jj_x++) {
+            double eta_patch1 = .999999999999;
+            double xi_patch1 = Middle_x + J_x * gaussian[jj_x];
+            double **ders_x;
+            DersBasisFuns(i_x, xi_patch1, p_x, knots_x_patch1, 0, ders_x);
+            VectorXd Nxi = VectorXd::Zero(dof_x_patch1);
+            for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+                Nxi(i_x - p_x + kk_x) = ders_x[0][kk_x];
+            }
+            for (int k = 0; k < 1; k++)
+                delete ders_x[k];
+            delete[] ders_x;
+            double pxpxi_patch1, pxpeta_patch1, pypxi_patch1, pypeta_patch1, x_patch1, y_patch1, pxpxi_xi_patch1, pxpxi_eta_patch1, pxpeta_eta_patch1, pypxi_xi_patch1,
+                    pypxi_eta_patch1, pypeta_eta_patch1;
+            Geometry1(xi_patch1, eta_patch1, pxpxi_patch1, pxpeta_patch1, pypxi_patch1, pypeta_patch1, pxpxi_xi_patch1,
+                      pxpxi_eta_patch1, pxpeta_eta_patch1, pypxi_xi_patch1, pypxi_eta_patch1, pypeta_eta_patch1,
+                      x_patch1, y_patch1);
+            x_basis_patch1_outerlayer += weight[jj_x] * Nxi * Nxi.transpose() * J_x * pypxi_patch1;
+            U_rhs_patch1_outerlayer += weight[jj_x] * Nxi * exactSolution(x_patch1,y_patch1) * J_x * pypxi_patch1;
+        }
+    }
+    for (int ii_x = 0; ii_x < elements_x_patch2; ii_x++) {
+        double J_x = (knots_x_patch2[ii_x + p_x + 1] - knots_x_patch2[ii_x + p_x]) / 2;
+        double Middle_x = (knots_x_patch2[ii_x + p_x + 1] + knots_x_patch2[ii_x +
+                                                                           p_x]) / 2;
+        int i_x = Findspan(m_x_patch2, p_x, knots_x_patch2, Middle_x);
+        for (int jj_x = 0; jj_x < gaussian_points; jj_x++) {
+            double eta_patch2 = .999999999999;
+            double xi_patch2 = Middle_x + J_x * gaussian[jj_x];
+            double **ders_x;
+            DersBasisFuns(i_x, xi_patch2, p_x, knots_x_patch2, 0, ders_x);
+            VectorXd Nxi = VectorXd::Zero(dof_x_patch2);
+            for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+                Nxi(i_x - p_x + kk_x) = ders_x[0][kk_x];
+            }
+            double w = (assemble_x_basis_outerlayer.block(dof_x_patch1,dof_x_patch1-2, dof_x_patch2,dof_x_patch2).transpose()*Nxi).sum();
+            Nxi/=w;
+            for (int k = 0; k < 1; k++)
+                delete ders_x[k];
+            delete[] ders_x;
+            double pxpxi_patch2, pxpeta_patch2, pypxi_patch2, pypeta_patch2, x_patch2, y_patch2, pxpxi_xi_patch2, pxpxi_eta_patch2, pxpeta_eta_patch2, pypxi_xi_patch2,
+                    pypxi_eta_patch2, pypeta_eta_patch2;
+            Geometry2(xi_patch2, eta_patch2, pxpxi_patch2, pxpeta_patch2, pypxi_patch2, pypeta_patch2, pxpxi_xi_patch2,
+                      pxpxi_eta_patch2, pxpeta_eta_patch2, pypxi_xi_patch2, pypxi_eta_patch2, pypeta_eta_patch2,
+                      x_patch2, y_patch2);
+            x_basis_patch2_outerlayer += weight[jj_x] * Nxi * Nxi.transpose() * J_x * pxpxi_patch2;
+            U_rhs_patch2_outerlayer += weight[jj_x] * Nxi * exactSolution(x_patch2,y_patch2) * J_x * pxpxi_patch2;
+        }
+    }
+
+    coefficients.clear();
+    SpMat x_basis_outerlayer_assembled = (assemble_x_basis_outerlayer.transpose() * x_basis_outerlayer *
+                                          assemble_x_basis_outerlayer).sparseView();
+    VectorXd U_rhs_outerlayer_assembled = assemble_x_basis_outerlayer.transpose() * U_rhs_outerlayer;
+    ConjugateGradient<SparseMatrix<double>, Lower | Upper> cg;
+    cg.compute(x_basis_outerlayer_assembled);
+    VectorXd U_outerlayer_solved = cg.solve(U_rhs_outerlayer_assembled);
+
+    ofstream outf("mesh.dat");
+
+    outf << "(x,y,z)"<<endl;
+    for (int ii = 0; ii < 200; ii++) {
+        U_rhs_outerlayer.setZero();
+        double xi_patch1 = ii * 1.0 / 200;
+        int i_x = Findspan(m_x_patch1, p_x, knots_x_patch1, xi_patch1);
+        double **ders_x;
+        DersBasisFuns(i_x, xi_patch1, p_x, knots_x_patch1, 0, ders_x);
+        VectorXd Nxi = VectorXd::Zero(dof_x_patch1);
+        for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+            Nxi(i_x - p_x + kk_x) = ders_x[0][kk_x];
+        }
+        for (int k = 0; k < 1; k++)
+            delete ders_x[k];
+        delete[] ders_x;
+        double pxpxi_patch1, pxpeta_patch1, pypxi_patch1, pypeta_patch1, x_patch1, y_patch1, pxpxi_xi_patch1, pxpxi_eta_patch1, pxpeta_eta_patch1, pypxi_xi_patch1,
+                pypxi_eta_patch1, pypeta_eta_patch1;
+        Geometry1(xi_patch1, .99999999999, pxpxi_patch1, pxpeta_patch1, pypxi_patch1, pypeta_patch1, pxpxi_xi_patch1,
+                  pxpxi_eta_patch1, pxpeta_eta_patch1, pypxi_xi_patch1, pypxi_eta_patch1, pypeta_eta_patch1,
+                  x_patch1, y_patch1);
+        U_rhs_patch1_outerlayer = Nxi;
+        U_rhs_outerlayer_assembled = assemble_x_basis_outerlayer.transpose() * U_rhs_outerlayer;
+        outf << "(" << x_patch1 << "," << y_patch1 << ","
+             << U_rhs_outerlayer_assembled.transpose() * U_outerlayer_solved << ")" << endl;
+    }
+    for (int ii = 0; ii < 200; ii++) {
+        U_rhs_outerlayer.setZero();
+        double xi_patch2 = ii * 1.0 / 200;
+        int i_x = Findspan(m_x_patch2, p_x, knots_x_patch2, xi_patch2);
+        double **ders_x;
+        DersBasisFuns(i_x, xi_patch2, p_x, knots_x_patch2, 0, ders_x);
+        VectorXd Nxi = VectorXd::Zero(dof_x_patch2);
+        for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+            Nxi(i_x - p_x + kk_x) = ders_x[0][kk_x];
+        }
+        Nxi/=(assemble_x_basis_outerlayer.block(dof_x_patch1,dof_x_patch1-2, dof_x_patch2,dof_x_patch2).transpose()*Nxi).sum();
+        for (int k = 0; k < 1; k++)
+            delete ders_x[k];
+        delete[] ders_x;
+        double pxpxi_patch2, pxpeta_patch2, pypxi_patch2, pypeta_patch2, x_patch2, y_patch2, pxpxi_xi_patch2, pxpxi_eta_patch2, pxpeta_eta_patch2, pypxi_xi_patch2,
+                pypxi_eta_patch2, pypeta_eta_patch2;
+        Geometry2(xi_patch2, .99999999999, pxpxi_patch2, pxpeta_patch2, pypxi_patch2, pypeta_patch2, pxpxi_xi_patch2,
+                  pxpxi_eta_patch2, pxpeta_eta_patch2, pypxi_xi_patch2, pypxi_eta_patch2, pypeta_eta_patch2,
+                  x_patch2, y_patch2);
+        U_rhs_patch2_outerlayer = Nxi;
+        U_rhs_outerlayer_assembled = assemble_x_basis_outerlayer.transpose() * U_rhs_outerlayer;
+        outf << "(" << x_patch2 << "," << y_patch2 << ","
+             << U_rhs_outerlayer_assembled.transpose() * U_outerlayer_solved << ")" << endl;
+    }
+
+
+/*
     MatrixXd K = MatrixXd::Zero(dof_patch1 + dof_patch2, dof_patch1 + dof_patch2);
     VectorXd F = VectorXd::Zero(dof_patch1 + dof_patch2);
     Ref<MatrixXd> K_patch1 = K.block(0, 0, dof_patch1, dof_patch1);
@@ -467,8 +606,8 @@ int main() {
             }
         }
     }
+
     SpMat assemble_C0(dof_patch1 + dof_patch2, dof_patch1 + dof_patch2 - dof_y_patch2);
-    vector<Eigen::Triplet<double> > coefficients;
     for (int i = 0; i < dof_patch1; i++)
         coefficients.push_back(Eigen::Triplet<double>(i, i, 1));
     for (int i = 0; i < dof_y_patch1; i++) {
@@ -497,6 +636,114 @@ int main() {
     for (int i = 0; i < dof_patch2 - 2 * dof_y_patch2; i++)
         coefficients.push_back(Eigen::Triplet<double>(i + dof_patch1 + dof_y_patch2, i + dof_patch1, 1));
     assemble_C1.setFromTriplets(coefficients.begin(), coefficients.end());
+    for (int iii_y = 0; iii_y < 51; iii_y++) {
+        for (int iii_x = 0; iii_x < 51; iii_x++) {
+            MatrixXd K = MatrixXd::Zero(dof_patch1 + dof_patch2, dof_patch1 + dof_patch2);
+            VectorXd F = VectorXd::Zero(dof_patch1 + dof_patch2);
+            Ref<MatrixXd> K_patch1 = K.block(0, 0, dof_patch1, dof_patch1);
+            Ref<MatrixXd> K_patch2 = K.block(dof_patch1, dof_patch1, dof_patch2, dof_patch2);
+            Ref<VectorXd> F_patch1 = F.segment(0, dof_patch1);
+            Ref<VectorXd> F_patch2 = F.segment(dof_patch1, dof_patch2);
+            double xi = .5 + iii_x * 1.0 / 50 * 1.0;
+            double eta = 1 - iii_y * 1.0 / 50 * .1;
+            if (xi < 1.0) {
+                int i_x = Findspan(m_x_patch1, p_x, knots_x_patch1, xi);
+                int i_y = Findspan(m_y_patch1, p_y, knots_y_patch1, eta);
+                double **ders_x, **ders_y;
+                DersBasisFuns(i_x, xi, p_x, knots_x_patch1, 2, ders_x);
+                DersBasisFuns(i_y, eta, p_y, knots_y_patch1, 2, ders_y);
+                VectorXd Nxi(p_x + 1), Nxi_xi(p_x + 1), Nxi_xi_xi(p_x + 1), Neta(p_y + 1),
+                        Neta_eta(p_y + 1), Neta_eta_eta(p_y + 1);
+                for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+                    Nxi(kk_x) = ders_x[0][kk_x];
+                    Nxi_xi(kk_x) = ders_x[1][kk_x];
+                    Nxi_xi_xi(kk_x) = ders_x[2][kk_x];
+                }
+                for (int kk_y = 0; kk_y < p_y + 1; kk_y++) {
+                    Neta(kk_y) = ders_y[0][kk_y];
+                    Neta_eta(kk_y) = ders_y[1][kk_y];
+                    Neta_eta_eta(kk_y) = ders_y[2][kk_y];
+                }
+                for (int k = 0; k < 3; k++)
+                    delete ders_x[k];
+                delete[] ders_x;
+                for (int k = 0; k < 3; k++)
+                    delete ders_y[k];
+                delete[] ders_y;
+                VectorXd Nxi_xi_xiNeta, NxiNeta_eta_eta, Nxi_xiNeta_eta, NxiNeta, Nxi_xiNeta, NxiNeta_eta;
+                NxiNeta_eta = kroneckerProduct(Nxi, Neta_eta);
+                Nxi_xiNeta = kroneckerProduct(Nxi_xi, Neta);
+                Nxi_xi_xiNeta = kroneckerProduct(Nxi_xi_xi, Neta);
+                NxiNeta_eta_eta = kroneckerProduct(Nxi, Neta_eta_eta);
+                Nxi_xiNeta_eta = kroneckerProduct(Nxi_xi, Neta_eta);
+                NxiNeta = kroneckerProduct(Nxi, Neta);
+
+                double pxpxi, pxpeta, pypxi, pypeta, pxpxi_xi, pxpxi_eta, pxpeta_eta, pypxi_xi, pypxi_eta, pypeta_eta, x, y;
+                Geometry1(xi, eta, pxpxi, pxpeta, pypxi, pypeta, pxpxi_xi, pxpxi_eta, pxpeta_eta, pypxi_xi,
+                          pypxi_eta, pypeta_eta, x, y);
+                double Jacobian = pxpxi * pypeta - pxpeta * pypxi;
+                outf << x << " " << y << " ";
+                VectorXd Nx_xNy = 1.0 / Jacobian * (Nxi_xiNeta * pypeta - NxiNeta_eta * pypxi);
+                VectorXd NxNy_y = 1.0 / Jacobian * (-Nxi_xiNeta * pxpeta + NxiNeta_eta * pxpxi);
+                VectorXd N_n = (Nx_xNy * pxpxi + NxNy_y * pypxi) / pow(pxpxi * pxpxi + pypxi * pypxi, .5);
+                for (int kkx = 0; kkx < (p_x + 1) * (p_y + 1); kkx++) {
+                    F_patch1((m_y_patch1 - p_y) * (kkx / (p_y + 1) + i_x - p_x) + kkx %
+                                                                                  (p_y + 1) + i_y - p_y) += NxiNeta(
+                            kkx);
+                }
+            } else {
+                xi -= 1;
+                int i_x = Findspan(m_x_patch2, p_x, knots_x_patch2, xi);
+                int i_y = Findspan(m_y_patch2, p_y, knots_y_patch2, eta);
+                double **ders_x, **ders_y;
+                DersBasisFuns(i_x, xi, p_x, knots_x_patch2, 2, ders_x);
+                DersBasisFuns(i_y, eta, p_y, knots_y_patch2, 2, ders_y);
+                VectorXd Nxi(p_x + 1), Nxi_xi(p_x + 1), Nxi_xi_xi(p_x + 1), Neta(p_y + 1),
+                        Neta_eta(p_y + 1), Neta_eta_eta(p_y + 1);
+                for (int kk_x = 0; kk_x < p_x + 1; kk_x++) {
+                    Nxi(kk_x) = ders_x[0][kk_x];
+                    Nxi_xi(kk_x) = ders_x[1][kk_x];
+                    Nxi_xi_xi(kk_x) = ders_x[2][kk_x];
+                }
+                for (int kk_y = 0; kk_y < p_y + 1; kk_y++) {
+                    Neta(kk_y) = ders_y[0][kk_y];
+                    Neta_eta(kk_y) = ders_y[1][kk_y];
+                    Neta_eta_eta(kk_y) = ders_y[2][kk_y];
+                }
+                for (int k = 0; k < 3; k++)
+                    delete ders_x[k];
+                delete[] ders_x;
+                for (int k = 0; k < 3; k++)
+                    delete ders_y[k];
+                delete[] ders_y;
+                VectorXd Nxi_xi_xiNeta, NxiNeta_eta_eta, Nxi_xiNeta_eta, NxiNeta, Nxi_xiNeta, NxiNeta_eta;
+                NxiNeta_eta = kroneckerProduct(Nxi, Neta_eta);
+                Nxi_xiNeta = kroneckerProduct(Nxi_xi, Neta);
+                Nxi_xi_xiNeta = kroneckerProduct(Nxi_xi_xi, Neta);
+                NxiNeta_eta_eta = kroneckerProduct(Nxi, Neta_eta_eta);
+                Nxi_xiNeta_eta = kroneckerProduct(Nxi_xi, Neta_eta);
+                NxiNeta = kroneckerProduct(Nxi, Neta);
+
+                double pxpxi, pxpeta, pypxi, pypeta, pxpxi_xi, pxpxi_eta, pxpeta_eta, pypxi_xi, pypxi_eta, pypeta_eta, x, y;
+                Geometry2(xi, eta, pxpxi, pxpeta, pypxi, pypeta, pxpxi_xi, pxpxi_eta, pxpeta_eta, pypxi_xi,
+                          pypxi_eta, pypeta_eta, x, y);
+                double Jacobian = pxpxi * pypeta - pxpeta * pypxi;
+                outf << x << " " << y << " ";
+                VectorXd Nx_xNy = 1.0 / Jacobian * (Nxi_xiNeta * pypeta - NxiNeta_eta * pypxi);
+                VectorXd NxNy_y = 1.0 / Jacobian * (-Nxi_xiNeta * pxpeta + NxiNeta_eta * pxpxi);
+                VectorXd N_n = (Nx_xNy * pxpxi + NxNy_y * pypxi) / pow(pxpxi * pxpxi + pypxi * pypxi, .5);
+                for (int kkx = 0; kkx < (p_x + 1) * (p_y + 1); kkx++) {
+                    F_patch2((m_y_patch2 - p_y) * (kkx / (p_y + 1) + i_x - p_x) + kkx %
+                                                                                  (p_y + 1) + i_y - p_y) += NxiNeta(
+                            kkx);
+                }
+            }
+            VectorXd F_assembled = assemble_C1.transpose() * (assemble_C0.transpose() * F);
+            outf << F_assembled(dof_patch1-1) << endl;
+        }
+    }
+
+
     SpMat K_assembled = (assemble_C1.transpose() * assemble_C0.transpose() * K * assemble_C0 *
                          assemble_C1).sparseView();
     VectorXd F_assembled = assemble_C1.transpose() * assemble_C0.transpose() * F;
@@ -601,7 +848,7 @@ int main() {
         }
     }
     cout << sqrt(L2_norm_error) / sqrt(L2_norm) << endl;
-     */
+    */
     return 0;
 }
 
